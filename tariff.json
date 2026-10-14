@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 4,
+  "minAppVersionCode": 16,
+  "publishedAt": "2026-10-14",
+  "data": {
+    "dataVersion": "RP4-2025.07-2027.12",
+    "effectiveStart": "2025-07-01",
+    "effectiveEnd": "2027-12-31",
+    "generalLowSen": 27.03,
+    "generalHighSen": 37.03,
+    "capacitySen": 4.55,
+    "networkSen": 12.85,
+    "retailRm": 10.0,
+    "touPeakLowSen": 28.52,
+    "touOffPeakLowSen": 24.43,
+    "touPeakHighSen": 38.52,
+    "touOffPeakHighSen": 34.43,
+    "retailThresholdKwh": 600.0,
+    "kwtbbRate": 0.016,
+    "kwtbbThresholdKwh": 300.0,
+    "sstRate": 0.08,
+    "sstDefaultThresholdKwh": 600.0,
+    "protectionThresholdKwh": 800.0,
+    "protectionStart": "2026-09-01",
+    "protectionEnd": "2026-12-31",
+    "afaSen": 3.61,
+    "afaMonth": "2026-10",
+    "touPeakHoursWeekday": 8.0,
+    "touOffPeakHoursWeekday": 16.0,
+    "eeiTiers": [
+      {
+        "upToKwh": 200,
+        "rateSen": 25.0
+      },
+      {
+        "upToKwh": 250,
+        "rateSen": 24.5
+      },
+      {
+        "upToKwh": 300,
+        "rateSen": 22.5
+      },
+      {
+        "upToKwh": 350,
+        "rateSen": 21.0
+      },
+      {
+        "upToKwh": 400,
+        "rateSen": 17.0
+      },
+      {
+        "upToKwh": 450,
+        "rateSen": 14.5
+      },
+      {
+        "upToKwh": 500,
+        "rateSen": 12.0
+      },
+      {
+        "upToKwh": 550,
+        "rateSen": 10.5
+      },
+      {
+        "upToKwh": 600,
+        "rateSen": 9.0
+      },
+      {
+        "upToKwh": 650,
+        "rateSen": 7.5
+      },
+      {
+        "upToKwh": 700,
+        "rateSen": 5.5
+      },
+      {
+        "upToKwh": 750,
+        "rateSen": 4.5
+      },
+      {
+        "upToKwh": 800,
+        "rateSen": 4.0
+      },
+      {
+        "upToKwh": 850,
+        "rateSen": 2.5
+      },
+      {
+        "upToKwh": 900,
+        "rateSen": 1.0
+      },
+      {
+        "upToKwh": 1000,
+        "rateSen": 0.5
+      }
+    ]
+  }
+}
