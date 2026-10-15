@@ -1,0 +1,89 @@
+name: Update AFA and publish tariff.json
+
+on:
+  schedule:
+    - cron: "30 16 * * *"   # 00:30 Malaysia time (UTC+8), every day
+  workflow_dispatch:         # "Run workflow" button
+  push:                      # you edited tariff.json by hand -> publish it
+    branches: [main]
+    paths:
+      - tariff.json
+
+permissions:
+  contents: read
+
+concurrency:
+  group: afa-pages
+  cancel-in-progress: false
+
+jobs:
+  update-afa:
+    # Not needed when you edited the file yourself.
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.read.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Self-test the parser
+        run: python3 -m unittest discover -s scripts
+
+      - name: Read AFA from Single Buyer
+        id: read
+        run: python3 scripts/update_afa.py
+
+      - name: Commit tariff.json if it changed
+        if: steps.read.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tariff.json
+          git commit -m "chore: AFA ${{ steps.read.outputs.afa_month }} = ${{ steps.read.outputs.afa_sen }} sen/kWh (auto)"
+          git push
+
+  deploy:
+    needs: update-afa
+    # Runs after a manual edit (push), a manual run, or a scheduled run that actually changed something.
+    # Never runs if the update job failed.
+    if: ${{ always() && needs.update-afa.result != 'failure' && needs.update-afa.result != 'cancelled' && (github.event_name != 'schedule' || needs.update-afa.outputs.changed == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      # A typo in tariff.json stops here, so the live file is never replaced by a broken one.
+      - name: Validate tariff.json
+        run: |
+          python3 - <<'PY'
+          import json
+          d = json.load(open("tariff.json", encoding="utf-8"))
+          assert d["schemaVersion"] >= 1 and "data" in d
+          x = d["data"]
+          assert -50 <= float(x["afaSen"]) <= 50
+          print("tariff.json OK:", x["afaMonth"], x["afaSen"], "sen/kWh")
+          PY
+
+      - name: Stage site
+        run: |
+          mkdir _site
+          cp tariff.json _site/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
