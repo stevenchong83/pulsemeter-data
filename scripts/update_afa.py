@@ -71,23 +71,40 @@ RATE = re.compile(
 )
 MONTH = re.compile(rf"(?i)\b({_M})\.?\s+(20\d\d)\b")
 CONNECTOR = re.compile(r"(?i)\s*(?:for|in|on|during|bagi|untuk|pada)(?:\s+the\s+month\s+of|\s+bulan)?\s*")
-NEGATIVE = re.compile(r"(?i)±|\+/-|\bcap(?:ped)?\b|ceiling|threshold|trigger|\bband\b|maximum|\bhad\b|\blimit")
+NEGATIVE = re.compile(
+    r"(?i)±|\+/-|\bcap(?:ped)?\b|ceiling|threshold|trigger|\bband\b|maximum|\bhad\b|\blimit"
+    # projections / outlook figures and the amounts used to offset the surcharge are not the rate itself
+    r"|project|outlook|forecast|expected|estimat|unjuran|jangkaan|anggaran|mitigat|savings|ECTUA|offset|cushion"
+)
+# How convincing a sentence is as "the rate that is actually charged":
+#   0 = says it is implemented / reduced to / set at ...   (final, after any mitigation)
+#   1 = "recorded a surcharge of ..."                        (computed figure; final only if nothing was mitigated)
+#   2 = anything else
+FINAL_CUE = re.compile(r"(?i)\bimplement|\breduced to\b|\bset at\b|\bhas been set\b|ditetapkan|dilaksanakan|dikuatkuasakan|\bto be charged\b|\bwill be charged\b")
+RECORDED_CUE = re.compile(r"(?i)\brecorded\b|\bsurcharge of\b|\brebate of\b|dicatatkan")
+ADJUSTED = re.compile(r"(?i)mitigat|ECTUA|true-?up|offset|cushion|reduced to|dikurangkan|diimbangi")
 MAX_ABS_RATE = 20.0
 MAX_KEYWORD_DIST = 250
 MAX_MONTH_DIST = 200
 
 
-def sentence_context(t, pos, end, reach=120):
-    """The sentence/line around a figure (never a neighbouring sentence), at most `reach` chars each side."""
+def sentence_bounds(t, pos, end):
+    """Start/end offsets of the sentence or line that contains the figure at t[pos:end]."""
     left = max(t.rfind("\n", 0, pos), t.rfind(". ", 0, pos))
     left = 0 if left < 0 else left + 1
     rights = [i for i in (t.find("\n", end), t.find(". ", end)) if i >= 0]
     right = min(rights) if rights else len(t)
+    return left, right
+
+
+def sentence_context(t, pos, end, reach=120):
+    """The sentence/line around a figure (never a neighbouring sentence), at most `reach` chars each side."""
+    left, right = sentence_bounds(t, pos, end)
     return t[max(left, pos - reach):min(right, end + reach)]
 
 
 def find_all(raw_text):
-    """-> list of (rate_sen, (year, month), score). Lower score = more convincing."""
+    """-> list of (rate_sen, (year, month), score, tier). Lower score/tier = more convincing."""
     t = normalize(raw_text)
     keywords = [m.start() for m in KEYWORD.finditer(t)]
     if not keywords:
@@ -107,18 +124,24 @@ def find_all(raw_text):
         kw_dist = min(abs(k - pos) for k in keywords)
         if kw_dist > MAX_KEYWORD_DIST:
             continue
-        if NEGATIVE.search(sentence_context(t, pos, end)):
+        ctx = sentence_context(t, pos, end)
+        if NEGATIVE.search(ctx):
             continue
+        tier = 0 if FINAL_CUE.search(ctx) else (1 if RECORDED_CUE.search(ctx) else 2)
         following = [x for x in months if 0 <= x[0] - end <= 40 and CONNECTOR.fullmatch(t[end:x[0]])]
         if following:
             chosen = min(following, key=lambda x: x[0])
             month_dist = chosen[0] - end
         else:
-            chosen = min(months, key=lambda x: min(abs(x[0] - pos), abs(x[1] - pos)))
+            # A month named in the SAME sentence wins over a nearer month in the next sentence.
+            left, right = sentence_bounds(t, pos, end)
+            pool = [x for x in months if x[0] >= left and x[1] < right]
+            same_sentence = bool(pool)
+            chosen = min(pool or months, key=lambda x: min(abs(x[0] - pos), abs(x[1] - pos)))
             month_dist = min(abs(chosen[0] - pos), abs(chosen[1] - pos))
-            if month_dist > MAX_MONTH_DIST:
+            if not same_sentence and month_dist > MAX_MONTH_DIST:
                 continue
-        out.append((rate, chosen[2], kw_dist + month_dist))
+        out.append((rate, chosen[2], kw_dist + month_dist, tier))
     return out
 
 
@@ -127,13 +150,29 @@ def next_month(ym):
     return (y + 1, 1) if m == 12 else (y, m + 1)
 
 
-def select(findings, now_ym):
-    """-> (rate, month) | None, ambiguous, latest_month. Preference: this month, next month, newest older month."""
+def adjusted_near(text, ym):
+    """True if the text around a mention of month `ym` talks about mitigation / true-up / 'reduced to'."""
+    t = normalize(text)
+    for m in MONTH.finditer(t):
+        if (int(m.group(2)), MONTHS[m.group(1).lower()]) != ym:
+            continue
+        if ADJUSTED.search(t[max(0, m.start() - 500):min(len(t), m.end() + 800)]):
+            return True
+    return False
+
+
+def select(findings, now_ym, text=""):
+    """
+    -> (rate, month) | None, ambiguous, latest_month.
+    Month preference: this month, next month, newest older month.
+    Within the month the most convincing tier wins. If the page says the surcharge was mitigated/reduced
+    but no sentence states what is implemented, we refuse to guess (ambiguous) rather than take the computed figure.
+    """
     if not findings:
         return None, False, None
     by = {}
-    for rate, ym, score in findings:
-        by.setdefault(ym, []).append((rate, score))
+    for rate, ym, score, tier in findings:
+        by.setdefault(ym, []).append((rate, score, tier))
     latest = max(by)
     if now_ym in by:
         chosen = now_ym
@@ -143,10 +182,15 @@ def select(findings, now_ym):
         older = [k for k in by if k < now_ym]
         chosen = max(older) if older else latest
     cands = by[chosen]
-    if len({"%.2f" % r for r, _ in cands}) > 1:
+    best = min(c[2] for c in cands)
+    if best != 0 and adjusted_near(text, chosen):
         return None, True, latest
-    best = min(cands, key=lambda c: c[1])
-    return (best[0], chosen), False, latest
+    cands = [c for c in cands if c[2] == best]
+    if len({"%.2f" % c[0] for c in cands}) > 1:
+        return None, True, latest
+    top = min(cands, key=lambda c: c[1])
+    return (top[0], chosen), False, latest
+
 
 # ---------------------------------------------------------------- decision (pure, unit-tested)
 
@@ -239,8 +283,11 @@ def main():
             errors.append("%s: %s" % (url, e))
             print("FETCH FAILED", url, e)
             continue
-        picked, ambiguous, latest = select(find_all(text), cur)
+        found = find_all(text)
+        picked, ambiguous, latest = select(found, cur, text)
         print("%s -> %s%s latest=%s" % (url, picked, " AMBIGUOUS" if ambiguous else "", latest))
+        for rate, ym, score, tier in sorted(found, key=lambda x: (x[1], x[3], x[2])):
+            print("    candidate %+.2f sen/kWh for %s (tier %d, score %d)" % (rate, fmt_ym(ym), tier, score))
         readings.append((url, picked, ambiguous))
 
     action, message, rate, ym = decide(today, old_rate, old_month, readings, errors, len(URLS))
