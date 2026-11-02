@@ -1,7 +1,7 @@
 {
   "schemaVersion": 4,
   "minAppVersionCode": 16,
-  "publishedAt": "2026-10-14",
+  "publishedAt": "2026-11-02",
   "data": {
     "dataVersion": "RP4-2025.07-2027.12",
     "effectiveStart": "2025-07-01",
@@ -23,8 +23,8 @@
     "protectionThresholdKwh": 800.0,
     "protectionStart": "2026-09-01",
     "protectionEnd": "2026-12-31",
-    "afaSen": 3.61,
-    "afaMonth": "2026-10",
+    "afaSen": 3.60,
+    "afaMonth": "2026-11",
     "touPeakHoursWeekday": 8.0,
     "touOffPeakHoursWeekday": 16.0,
     "eeiTiers": [
