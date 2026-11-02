@@ -10,7 +10,41 @@ OCT = (2026, 10)
 
 
 def pick(text, now=OCT):
-    return u.select(u.find_all(u.html_to_text(text)), now)
+    plain = u.html_to_text(text)
+    return u.select(u.find_all(plain), now, plain)
+
+
+# Text copied from the Single Buyer "AFA Rationale" tab (screenshot, 2 Nov 2026).
+NOV_RATIONALE = """<h3>Why AFA surcharge</h3>
+<p>The AFA for November 2026 recorded a surcharge of RM562 million (equivalent to 5.47 sen/kWh), primarily driven by higher fuel prices, which resulted in increased electricity generation costs during the period.</p>
+<p>To cushion the impact of rising fuel costs on consumers, 34% of the AFA surcharge, amounting to RM192 million (equivalent to 1.87 sen/kWh), is mitigated through the utilisation of savings from the Energy Cost True-Up Adjustment (ECTUA) for July 2026. Therefore, as published by TNB in its website, the AFA surcharge to be implemented for November 2026 is reduced to 3.60 sen/kWh (equivalent to RM370 million).</p>
+<p>In line with the recent announcement by the Government, domestic consumers with monthly electricity consumption of 800 kWh and below will continue to be exempted from the AFA surcharge until December 2026.</p>"""
+OUTLOOK = """<h3>AFA Outlook</h3><p>The AFA outlook for December 2026 is projected at 4.46 sen/kWh, January 2027 at 7.59 sen/kWh and February 2027 at 6.10 sen/kWh.</p>
+<p>Previously, November 2026 was projected at 4.27 sen/kWh.</p>"""
+
+
+class RationaleTests(unittest.TestCase):
+    def test_november_page_picks_the_implemented_rate(self):
+        p, amb, _ = pick(NOV_RATIONALE + OUTLOOK, now=(2026, 11))
+        self.assertFalse(amb)
+        self.assertEqual((round(p[0], 2), p[1]), (3.60, (2026, 11)))
+
+    def test_rationale_alone(self):
+        p, amb, _ = pick(NOV_RATIONALE, now=(2026, 11))
+        self.assertEqual(round(p[0], 2), 3.60)
+
+    def test_month_without_mitigation_uses_the_recorded_figure(self):
+        html = ("<p>The AFA for December 2026 recorded a surcharge of RM400 million (equivalent to 3.90 sen/kWh), "
+                "driven by fuel prices.</p><p>AFA outlook: January 2027 is projected at 4.10 sen/kWh.</p>")
+        p, amb, _ = pick(html, now=(2026, 12))
+        self.assertEqual((round(p[0], 2), p[1]), (3.90, (2026, 12)))
+
+    def test_refuses_to_guess_when_mitigated_but_final_sentence_is_unrecognised(self):
+        html = ("<p>The AFA for November 2026 recorded a surcharge of RM562 million (equivalent to 5.47 sen/kWh).</p>"
+                "<p>Savings from ECTUA lower the amount payable by consumers for November 2026 to 3.60 sen/kWh.</p>")
+        p, amb, _ = pick(html, now=(2026, 11))
+        self.assertIsNone(p)
+        self.assertTrue(amb)
 
 
 class ParserTests(unittest.TestCase):
